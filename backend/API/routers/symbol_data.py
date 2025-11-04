@@ -30,6 +30,3 @@ def get_symbol_data(props: SymbolProperties):
     except Exception as e:
         logger.error(f"Erro ao obter dados de {props.symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-    
