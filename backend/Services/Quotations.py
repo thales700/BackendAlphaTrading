@@ -1,8 +1,8 @@
 import datetime
 import yfinance as yf
 import pandas as pd
-from Entities.Symbols import Symbols
-from Entities.Granularity import Granularity
+from entities.Symbols import Symbols
+from entities.Granularity import Granularity
 from typing import Union, Optional
 import logging
 
