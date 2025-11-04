@@ -1,6 +1,5 @@
 from pydantic import BaseModel
-from Entities.Granularity import Granularity
-
+from entities.Granularity import Granularity
 
 class SymbolProperties(BaseModel):
     symbol: str
