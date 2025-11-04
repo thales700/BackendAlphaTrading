@@ -16,10 +16,10 @@ class GarchLevels:
     @staticmethod
     def _FIGarchModel(returns: pd.Series, distribution: DistributionType) -> Union[pd.Series, str]:
         try:
-            model = arch_model(returns, vol='FIGARCH', p=1, o=1, q=1, dist=distribution.value)
+            model = arch_model(returns*100, vol='FIGARCH', p=1, o=1, q=1, dist=distribution.value)
             garch_fitted = model.fit(disp='off')
-            volatility = pd.Series(garch_fitted.conditional_volatility)
-            predicted = pd.Series(np.sqrt(garch_fitted.forecast(horizon=1).variance.values)[0])
+            volatility = pd.Series(garch_fitted.conditional_volatility/100)
+            predicted = pd.Series(np.sqrt(garch_fitted.forecast(horizon=1).variance.values)[0]/100)
             volatility = pd.concat([volatility, predicted])
             logger.info("EGARCH model created successfully.")
             return volatility
@@ -31,10 +31,10 @@ class GarchLevels:
     @staticmethod
     def _EGarchModel(returns: pd.Series, distribution: DistributionType) -> Union[pd.Series, str]:
         try:
-            model = arch_model(returns, vol='EGARCH', p=1, o=1, q=1, dist=distribution.value)
+            model = arch_model(returns*100, vol='EGARCH', p=1, o=1, q=1, dist=distribution.value)
             garch_fitted = model.fit(disp='off')
-            volatility = pd.Series(garch_fitted.conditional_volatility)
-            predicted = pd.Series(np.sqrt(garch_fitted.forecast(horizon=1).variance.values)[0])
+            volatility = pd.Series(garch_fitted.conditional_volatility/100)
+            predicted = pd.Series(np.sqrt(garch_fitted.forecast(horizon=1).variance.values)[0]/100)
             volatility = pd.concat([volatility, predicted])
             logger.info("EGARCH model created successfully.")
             return volatility
@@ -46,11 +46,12 @@ class GarchLevels:
     @staticmethod
     def _GarchModel(returns: pd.Series, distribution: DistributionType) -> Union[pd.Series, str]:
         try:
-            model = arch_model(returns, vol='GARCH', p=1, q=1, dist=distribution.value)
+            model = arch_model(returns*100, vol='GARCH', p=1, q=1, dist=distribution.value)
             garch_fitted = model.fit(disp='off')
-            volatility = pd.Series(garch_fitted.conditional_volatility)
-            predicted = pd.Series(np.sqrt(garch_fitted.forecast(horizon=1).variance.values)[0])
+            volatility = pd.Series(garch_fitted.conditional_volatility/100)
+            predicted = pd.Series(np.sqrt(garch_fitted.forecast(horizon=1).variance.values)[0]/100)
             volatility = pd.concat([volatility, predicted])
+            volatility.reset_index(inplace=True, drop=True)
             logger.info("GARCH model created successfully.")
             return volatility
 
@@ -84,46 +85,70 @@ class GarchLevels:
             
             # Treinar o modelo com os dados históricos (excluindo as últimas 2 linhas)
             volatility = GarchLevels._TrainModel(df.iloc[:-1], modelType, distribution, levels)
+            #logger.info(f"{volatility}")
             if isinstance(volatility, str):
                 return volatility
             
             df = df[1:]
-            df['volatility'] = volatility.copy()
+            df['Date'] = df.index
+            df.reset_index(inplace=True, drop=True)
+            df['volatility'] = volatility
+            logger.info(f"{df['volatility']}")
   
             for level in range(1, levels + 1):
                 col_pos = f'volatility_level_{level}'
                 col_neg = f'volatility_level_-{level}'
-                
-                # Inicializar colunas
-                df[col_pos] = 0.0
-                df[col_neg] = 0.0
-                
-                # Atribuir valores para todas as linhas exceto a última
-                df.loc[df.index[:-1], col_pos] = df.loc[df.index[:-1], 'Close'] * (1 + df.loc[df.index[:-1], 'volatility'] * level)
-                df.loc[df.index[:-1], col_neg] = df.loc[df.index[:-1], 'Close'] * (1 - df.loc[df.index[:-1], 'volatility'] * level)
-                
-                # Atribuir valor para a última linha
-                df.loc[df.index[-1], col_pos] = df.loc[df.index[-1], 'Open'] * (1 + df.loc[df.index[-1], 'volatility'] * level) #type: ignore
-                df.loc[df.index[-1], col_neg] = df.loc[df.index[-1], 'Open'] * (1 - df.loc[df.index[-1], 'volatility'] * level) #type: ignore
+                df[col_pos] = df['Close'] * (1 + level*df['volatility'])
+                df[col_neg] = df['Close'] * (1 - level*df['volatility'])
+                df[col_pos].at[-1] = df['Open'].iloc[-1] * (1 + level*df['volatility'].iloc[-1])
+                df[col_neg].at[-1] = df['Open'].iloc[-1] * (1 - level*df['volatility'].iloc[-1])
             
+            df.index = df['Date'] #type: ignore
             logger.info(f"Calculated {levels} volatility levels successfully.")
             return df
         except Exception as e:
             logger.error(f"Error calculating volatility levels: {e}")
             return str(e)
 
+
     @staticmethod
     def _MergeDataFrames(df: pd.DataFrame, df_daily: pd.DataFrame) -> Union[pd.DataFrame, str]:
         try:
-            df['time'] = pd.to_datetime(df.index, format='%d/%m/%Y')
-            df['time'] = df['time'].dt.date
-            df_daily['time'] = pd.to_datetime(df_daily.index, format='%d/%m/%Y')
-            df_daily['time'] = df_daily['time'].dt.date
-            df_merged = df.join(df_daily, rsuffix='_diary', how='left')
+            df_copy = df.copy()
+            df_daily_copy = df_daily.copy()
+            
+            df_copy['time'] = pd.to_datetime(df_copy.index).date
+            df_daily_copy['time'] = pd.to_datetime(df_daily_copy.index).date
+
+            df_merged = df_copy.merge(
+                df_daily_copy, 
+                on='time',
+                suffixes=('', '_diary'), 
+                how='left'
+            )
+            
+            df_merged.index = df.index
+
             logger.info("DataFrames merged successfully.")
             return df_merged
+            
         except Exception as e:
             logger.error(f"Error merging DataFrames: {e}")
+            return str(e)
+    
+    @staticmethod
+    def _FixDecimalPlaces(df: pd.DataFrame) -> Union[pd.DataFrame, str]:
+        try:
+            decimal_places = df['Close'].astype(str).str.split('.').str[1].str.len().max()
+
+            for col in df.select_dtypes(include=[np.number]).columns:
+                df[col] = df[col].round(decimal_places)
+
+            logger.info("Decimal places fixed successfully.")
+            return df
+
+        except Exception as e:
+            logger.error(f"Error fixing decimal places: {e}")
             return str(e)
 
     @staticmethod
@@ -150,7 +175,11 @@ class GarchLevels:
             df_merged = GarchLevels._MergeDataFrames(df, df_daily)
             if isinstance(df_merged, str):
                 return df_merged
-            
+
+            df_merged = GarchLevels._FixDecimalPlaces(df_merged)
+            if isinstance(df_merged, str):
+                return df_merged
+
             logger.info("Levels of volatility calculated successfully.")
             return df_merged
 

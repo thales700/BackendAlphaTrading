@@ -27,3 +27,4 @@ symbolInfos = SymbolProperties(
 modelType = ArchModelType.GARCH
 
 df = GarchLevels().GetLevels(symbolInfos, modelType, distribution=DistributionType.NORMAL, levels=3)
+print(df)
