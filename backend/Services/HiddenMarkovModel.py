@@ -135,6 +135,7 @@ class HiddenMarkovModel:
             if isinstance(regimes, str):
                 return regimes
             
+            ##RESULTADOS DE REGIME_MAPPED_DF IGUAIS AOS DE REGIMES
             regime_mapped_df = HiddenMarkovModel._RegimeMapping(regimes, features_df)
             if isinstance(regime_mapped_df, str):
                 return regime_mapped_df
